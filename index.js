@@ -19,7 +19,6 @@
 
 var kafka = require('kafka-node'),
     Adapter = require('socket.io-adapter'),
-    debug = require('debug')('socket.io-kafka'),
     async = require('async'),
     uid2 = require('uid2');
 
@@ -46,14 +45,14 @@ function adapter(uri, options) {
 
     // create producer and consumer if they weren't provided
     if (!opts.producer || !opts.consumer) {
-        debug('creating new kafa client');
+        console.log('creating new kafa client');
         client = new kafka.Client(uri, opts.clientId, { retries: 2 });
         if (!opts.producer) {
-            debug('creating new kafa producer');
+            console.log('creating new kafa producer');
             opts.producer = new kafka.Producer(client);
         }
         if (!opts.consumer) {
-            debug('creating new kafa consumer');
+            console.log('creating new kafa consumer');
             opts.consumer = new kafka.Consumer(client, [], { groupId: prefix });
         }
     }
@@ -78,21 +77,22 @@ function adapter(uri, options) {
         this.mainTopic = prefix + nsp.name;
         opts.createTopics = (create === undefined) ? true : create;
 
-        opts.producer.on('ready', function () {
-            debug('producer ready');
-            self.createTopic(self.mainTopic);
-            self.subscribe(self.mainTopic);
-
-            // handle incoming messages to the channel
-            self.consumer.on('message', self.onMessage.bind(self));
-            self.consumer.on('error', self.onError.bind(self));
-        });
+        !this.producer.ready ?  this.producer.on('ready', this.initChannel.bind(this)) : this.initChannel();
     }
+
 
     // inherit from Adapter
     Kafka.prototype = Object.create(Adapter.prototype);
     Kafka.prototype.constructor = Kafka;
 
+    Kafka.prototype.initChannel = function(channel){
+        this.createTopic(this.mainTopic);
+        this.subscribe(this.mainTopic);
+
+        // handle incoming messages to the channel
+        this.consumer.on('message', this.onMessage.bind(this));
+        this.consumer.on('error', this.onError.bind(this));
+    }
     /**
      * Emits the error.
      *
@@ -104,7 +104,7 @@ function adapter(uri, options) {
             arr = [].concat.apply([], arguments);
 
         if (err) {
-            debug('emitting error', err);
+            console.log('emitting error', err);
             arr.forEach(function (error) { self.emit('error', error); });
         }
     };
@@ -121,7 +121,7 @@ function adapter(uri, options) {
 
         try {
             message = JSON.parse(kafkaMessage.value);
-            if (uid === message[0]) { return debug('ignore same uid'); }
+            if (uid === message[0]) { return console.log('ignore same uid'); }
             packet = message[1];
 
             if (packet && packet.nsp === undefined) {
@@ -129,7 +129,7 @@ function adapter(uri, options) {
             }
 
             if (!packet || packet.nsp !== this.nsp.name) {
-                return debug('ignore different namespace');
+                return console.log('ignore different namespace');
             }
 
             this.broadcast(packet, message[2], true);
@@ -160,7 +160,7 @@ function adapter(uri, options) {
     Kafka.prototype.createTopic = function (channel) {
         var chn = this.safeTopicName(channel);
 
-        debug('creating topic %s', chn);
+        console.log('creating topic %s', chn);
         if (this.options.createTopics) {
             this.producer.createTopics(chn, this.onError.bind(this));
         }
@@ -178,7 +178,7 @@ function adapter(uri, options) {
             p = this.options.partition || 0,
             chn = this.safeTopicName(channel);
 
-        debug('subscribing to %s', chn);
+        console.log('subscribing to %s', chn);
         self.consumer.addTopics([{topic: chn, partition: p}],
             function (err) {
                 self.onError(err);
@@ -201,7 +201,7 @@ function adapter(uri, options) {
 
         this.producer.send([{ topic: chn, messages: [msg], attributes: 2 }],
             function (err, data) {
-                debug('new offset in partition:', data);
+                console.log('new offset in partition:', data);
                 self.onError(err);
             });
     };
@@ -221,7 +221,7 @@ function adapter(uri, options) {
         var self = this,
             channel;
 
-        debug('broadcasting packet', packet, opts);
+        console.log('broadcasting packet', packet, opts);
         Adapter.prototype.broadcast.call(this, packet, opts);
 
         if (!remote) {
